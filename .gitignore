@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# frontend build output
+dist/
+
+# rust build artifacts
+src-tauri/target/
+
+# tauri generated
+src-tauri/gen/
+
+# env / secrets
+.env
+*.local
+
+# macOS
+.DS_Store
+
+# 启动脚本运行时产物
+.bridge.pid
+.bridge.log
+
+# python / uv
+langgraph-bridge/.venv/
+__pycache__/
+*.pyc
+
+# 项目本地 AI 协作数据（个人记忆/会话，不入库）
+.workbuddy/

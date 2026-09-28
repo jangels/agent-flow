@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>agent-flow 聊天页</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#272b34; --txt:#e6e8ec;
+          --muted:#9aa3af; --brand:#6366f1; --brand2:#8b5cf6; --user:#1e3a5f;
+          --ok:#10b981; --danger:#ef4444; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; height:100vh; display:flex; flex-direction:column; }
+  header { padding:16px 20px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; }
+  header .dot { width:10px; height:10px; border-radius:50%; background:linear-gradient(135deg,var(--brand),var(--brand2)); }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:12px; margin-left:auto; }
+  .warn { background:#3a2a12; color:#ffcf86; font-size:12px; padding:6px 20px; border-bottom:1px solid var(--line); }
+  #log { flex:1; overflow-y:auto; padding:18px 20px; display:flex; flex-direction:column; gap:12px; }
+  .row { display:flex; gap:10px; }
+  .row.user { justify-content:flex-end; }
+  .bubble { max-width:80%; padding:10px 14px; border-radius:14px; white-space:pre-wrap; word-break:break-word; }
+  .row.user .bubble { background:var(--user); border-bottom-right-radius:4px; }
+  .row.bot .bubble { background:var(--panel); border:1px solid var(--line); border-bottom-left-radius:4px; }
+  .row.err .bubble { border-color:#b4402f; background:#2a1714; color:#ffb4a8; }
+  .who { font-size:11px; color:var(--muted); margin-bottom:2px; }
+  .composer { border-top:1px solid var(--line); padding:12px 16px; display:flex; gap:10px; background:var(--panel); }
+  #inp { flex:1; resize:none; background:var(--bg); color:var(--txt); border:1px solid var(--line);
+         border-radius:10px; padding:10px 12px; font:inherit; outline:none; max-height:140px; }
+  #inp:focus { border-color:var(--brand); }
+  #send { background:linear-gradient(135deg,var(--brand),var(--brand2)); color:#fff; border:0;
+          border-radius:10px; padding:0 18px; font-weight:600; cursor:pointer; }
+  #send:disabled { opacity:.5; cursor:default; }
+  .typing { color:var(--muted); font-style:italic; }
+
+  /* 审批卡片 */
+  .hitl { background:#211a2e; border:1px solid #8b5cf6; border-radius:12px; padding:12px 14px; margin-top:8px; }
+  .hitl .hitl-prompt { font-weight:600; margin-bottom:6px; }
+  .hitl .hitl-label { font-size:12px; color:var(--muted); margin:8px 0 4px; }
+  .hitl textarea { width:100%; min-height:56px; resize:vertical; background:var(--bg); color:var(--txt);
+                   border:1px solid var(--line); border-radius:8px; padding:8px 10px; font:inherit; outline:none; }
+  .hitl textarea:focus { border-color:var(--brand); }
+  .hitl textarea[readonly] { color:var(--muted); background:transparent; }
+  .hitl .hitl-note { min-height:34px; }
+  .hitl .hitl-actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .hitl button { border:0; border-radius:8px; padding:7px 16px; font-weight:600; cursor:pointer; font-size:13px; }
+  .hitl button:disabled { opacity:.45; cursor:default; }
+  .hitl .act-approve { background:var(--ok); color:#fff; }
+  .hitl .act-reject { background:var(--danger); color:#fff; }
+  .hitl .act-other { background:var(--panel); color:var(--txt); border:1px solid var(--line); }
+  .hitl .hitl-done { font-size:12px; color:var(--muted); margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="dot"></span>
+    <h1 id="flowName">加载中…</h1>
+    <span class="sub">agent-flow 聊天页</span>
+  </header>
+  <div id="warnBox"></div>
+  <div id="log"></div>
+  <div class="composer">
+    <textarea id="inp" rows="1" placeholder="输入内容，回车发送（Shift+Enter 换行）"></textarea>
+    <button id="send">发送</button>
+  </div>
+</div>
+<script>
+function getParam(key) {
+  const v = new URLSearchParams(location.search).get(key);
+  return v ? decodeURIComponent(v) : "";
+}
+
+const FLOW_ID = getParam("flowId");
+const BRIDGE_URL = getParam("bridgeUrl").replace(/\/$/, "") || "http://127.0.0.1:8010";
+const FLOW_NAME = getParam("name") || "未命名流程";
+
+document.getElementById("flowName").textContent = FLOW_NAME;
+
+if (!FLOW_ID) {
+  document.getElementById("warnBox").innerHTML = '<div class="warn">⚠️ 缺少 flowId 参数，无法运行流程。</div>';
+}
+
+const log = document.getElementById("log");
+const inp = document.getElementById("inp");
+const send = document.getElementById("send");
+
+// 当前挂起态：有值说明流程停在某个人工审批节点上，页面展示审批卡片
+let pending = null; // { threadId, awaiting }
+
+function addRow(side, text, cls) {
+  const row = document.createElement("div");
+  row.className = "row " + side + (cls ? " " + cls : "");
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = side === "user" ? "你" : "助手";
+  const b = document.createElement("div");
+  b.className = "bubble";
+  if (text) b.textContent = text;
+  row.appendChild(who);
+  row.appendChild(b);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  return b;
+}
+
+function setBusy(on) {
+  send.disabled = on;
+  inp.disabled = on;
+}
+
+function scrollBottom() {
+  log.scrollTop = log.scrollHeight;
+}
+
+// 统一响应处理：ok / paused / error 三态。paused 时在气泡里渲染审批卡片。
+function handleResponse(data) {
+  if (!data || !data.ok) {
+    const msg = (data && data.error) ? data.error
+              : (data && data.detail) ? data.detail
+              : "请求失败";
+    addRow("err", msg);
+    return;
+  }
+  if (data.paused && data.awaiting) {
+    pending = { threadId: data.threadId, awaiting: data.awaiting };
+    const b = addRow("bot", "");
+    renderApprovalCard(b, data.awaiting);
+    scrollBottom();
+    return;
+  }
+  addRow("bot", data.result || "（空结果）");
+}
+
+function renderApprovalCard(bubble, a) {
+  const card = document.createElement("div");
+  card.className = "hitl";
+
+  const p = document.createElement("div");
+  p.className = "hitl-prompt";
+  p.textContent = "⏸ " + (a.prompt || "流程需要人工审批");
+  card.appendChild(p);
+
+  const allowEdit = a.allowEdit !== false;
+  const actions = (a.actions && a.actions.length) ? a.actions : ["approve", "reject"];
+
+  let valueTa = null;
+  if (a.input) {
+    const lb = document.createElement("div");
+    lb.className = "hitl-label";
+    lb.textContent = allowEdit ? "待审内容（可修改后通过）：" : "待审内容：";
+    card.appendChild(lb);
+    valueTa = document.createElement("textarea");
+    valueTa.className = "hitl-value";
+    valueTa.value = a.input;
+    if (!allowEdit) valueTa.readOnly = true;
+    card.appendChild(valueTa);
+  }
+
+  const lb2 = document.createElement("div");
+  lb2.className = "hitl-label";
+  lb2.textContent = "备注（可选，驳回理由 / 通过说明）：";
+  card.appendChild(lb2);
+  const note = document.createElement("textarea");
+  note.className = "hitl-note";
+  card.appendChild(note);
+
+  const acts = document.createElement("div");
+  acts.className = "hitl-actions";
+  actions.forEach(function (act) {
+    const btn = document.createElement("button");
+    btn.textContent = act;
+    btn.className = act === "approve" ? "act-approve" : act === "reject" ? "act-reject" : "act-other";
+    btn.addEventListener("click", function () {
+      if (!pending) return;
+      const decision = {
+        decision: act,
+        value: (act === "approve" && valueTa && valueTa.value !== a.input) ? valueTa.value : undefined,
+        note: note.value.trim() || undefined,
+      };
+      // 禁掉卡片按钮，防止重复提交
+      acts.querySelectorAll("button").forEach(function (x) { x.disabled = true; });
+      resume(pending.threadId, decision, card);
+    });
+    acts.appendChild(btn);
+  });
+  card.appendChild(acts);
+  bubble.appendChild(card);
+}
+
+async function resume(threadId, decision, card) {
+  const typing = addRow("bot", "续跑中…", "typing");
+  try {
+    const r = await fetch(BRIDGE_URL + "/flows/" + encodeURIComponent(FLOW_ID) + "/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId: threadId, decision: decision, stream: false }),
+    });
+    const data = await r.json().catch(function () { return null; });
+    log.removeChild(typing.parentNode);
+    const done = document.createElement("div");
+    done.className = "hitl-done";
+    done.textContent = "✓ 已提交：" + decision.decision;
+    card.appendChild(done);
+    pending = null;
+    handleResponse(data);
+  } catch (e) {
+    if (typing.parentNode) log.removeChild(typing.parentNode);
+    // 提交失败：恢复按钮允许重试
+    card.querySelectorAll("button").forEach(function (x) { x.disabled = false; });
+    addRow("err", "续跑失败：" + e.message);
+  }
+}
+
+async function submit() {
+  const text = inp.value.trim();
+  if (!text || send.disabled || !FLOW_ID) return;
+  addRow("user", text);
+  inp.value = "";
+  inp.style.height = "auto";
+  setBusy(true);
+  const typing = addRow("bot", "思考中…", "typing");
+  try {
+    const r = await fetch(BRIDGE_URL + "/flows/" + encodeURIComponent(FLOW_ID) + "/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: text, stream: false }),
+    });
+    const data = await r.json().catch(function () { return null; });
+    log.removeChild(typing.parentNode);
+    handleResponse(data);
+  } catch (e) {
+    if (typing.parentNode) log.removeChild(typing.parentNode);
+    addRow("err", "网络错误：" + e.message);
+  } finally {
+    setBusy(false);
+    inp.focus();
+  }
+}
+
+send.addEventListener("click", submit);
+inp.addEventListener("keydown", function (e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+});
+inp.addEventListener("input", function () {
+  inp.style.height = "auto";
+  inp.style.height = Math.min(inp.scrollHeight, 140) + "px";
+});
+inp.focus();
+</script>
+</body>
+</html>
