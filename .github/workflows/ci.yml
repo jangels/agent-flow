@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+
+  rust:
+    name: Rust (cargo test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri v2 Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test
+
+  bridge:
+    name: Python bridge (LangGraph tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: langgraph-bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: langgraph-bridge/uv.lock
+      - name: Sync dependencies (locked)
+        run: uv sync --frozen
+      - name: ReAct node tests (58 assertions)
+        run: uv run --no-sync python tests/test_react.py
+      - name: Condition branch tests (55 assertions)
+        run: uv run --no-sync python tests/test_condition.py
+      - name: HITL tests (50 assertions)
+        run: uv run --no-sync python tests/test_hitl.py
