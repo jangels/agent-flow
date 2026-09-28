@@ -13,6 +13,7 @@ jobs:
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,6 +30,7 @@ jobs:
   rust:
     name: Rust (cargo test)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri v2 Linux dependencies
@@ -58,9 +60,14 @@ jobs:
   bridge:
     name: Python bridge (LangGraph tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: langgraph-bridge
+    env:
+      # 无 tty 时保证日志实时可见；faulthandler 让超时崩溃时吐出全线程 Python 堆栈
+      PYTHONUNBUFFERED: "1"
+      PYTHONFAULTHANDLER: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -69,9 +76,10 @@ jobs:
           cache-dependency-glob: langgraph-bridge/uv.lock
       - name: Sync dependencies (locked)
         run: uv sync --frozen
+      # timeout -s ABRT：超时向进程发 SIGABRT，配合 faulthandler 打印挂死点堆栈后退出
       - name: ReAct node tests (58 assertions)
-        run: uv run --no-sync python tests/test_react.py
+        run: timeout -s ABRT 300 uv run --no-sync python tests/test_react.py
       - name: Condition branch tests (55 assertions)
-        run: uv run --no-sync python tests/test_condition.py
+        run: timeout -s ABRT 300 uv run --no-sync python tests/test_condition.py
       - name: HITL tests (50 assertions)
-        run: uv run --no-sync python tests/test_hitl.py
+        run: timeout -s ABRT 300 uv run --no-sync python tests/test_hitl.py
