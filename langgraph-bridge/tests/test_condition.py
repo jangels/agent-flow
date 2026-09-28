@@ -24,7 +24,7 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import server as S  # noqa: E402
+import server as S
 
 PASS, FAIL = [], []
 
@@ -92,7 +92,7 @@ def branch_graph(expression: str, input_text: str, labels=("yes", "no")) -> dict
     }
 
 
-async def main() -> int:  # noqa: C901
+async def main() -> int:
     # ---------------------------------------------------------- 1. 候选菜单
     print("\n[1] 候选菜单构造 _candidates_of")
     nodes = {
@@ -260,7 +260,7 @@ async def main() -> int:  # noqa: C901
     # ---------------------------------------------------- 7. _condition_node
     print("\n[7] _condition_node 直调")
     q: asyncio.Queue = asyncio.Queue()
-    out, br, lbl, why = await S._condition_node({}, "任意内容", {}, q, "c0", [])
+    out, br, lbl, _why = await S._condition_node({}, "任意内容", {}, q, "c0", [])
     check(
         "无候选 -> 直通且 branch 为空",
         out == "任意内容" and br == "" and drain(q) == [],
@@ -268,11 +268,11 @@ async def main() -> int:  # noqa: C901
 
     q = asyncio.Queue()
     one = [{"target": "only", "label": "唯一出口"}]
-    out, br, lbl, why = await S._condition_node({}, "任意内容", {}, q, "c1", one)
+    out, br, lbl, _why = await S._condition_node({}, "任意内容", {}, q, "c1", one)
     check("单候选 -> 直选且不发任何事件", br == "only" and drain(q) == [])
 
     q = asyncio.Queue()
-    out, br, lbl, why = await S._condition_node(
+    out, br, lbl, _why = await S._condition_node(
         {"expression": "询问天气"}, "今天北京天气", {}, q, "c2", cands[:2]
     )
     check("双候选命中 -> target=a", br == "a" and lbl == "查天气", f"{br}/{lbl}")
@@ -282,7 +282,7 @@ async def main() -> int:  # noqa: C901
     )
 
     q = asyncio.Queue()
-    out, br, lbl, why = await S._condition_node(
+    out, br, lbl, _why = await S._condition_node(
         {"expression": "询问天气"}, "帮我重构代码", {}, q, "c3", cands[:2]
     )
     check("双候选未命中 -> target=b", br == "b", f"{br}/{lbl}")

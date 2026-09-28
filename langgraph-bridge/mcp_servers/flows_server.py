@@ -50,15 +50,14 @@ from mcp.server.fastmcp import FastMCP
 
 # 共享存储层在上一级目录（langgraph-bridge/flow_store.py）
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import flow_store  # noqa: E402
+import flow_store
 
 
 def _bridge_base() -> str:
     """执行后端 base url；兼容「给 .../run」与「给裸 base」两种写法。"""
     raw = os.environ.get("LANGGRAPH_BRIDGE_URL", "http://127.0.0.1:8000")
     raw = raw.rstrip("/")
-    if raw.endswith("/run"):
-        raw = raw[: -len("/run")]
+    raw = raw.removesuffix("/run")
     return raw
 
 

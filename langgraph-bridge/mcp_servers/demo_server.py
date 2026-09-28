@@ -10,7 +10,7 @@
 """
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from mcp.server.fastmcp import FastMCP
 
@@ -28,8 +28,8 @@ def add(input: str) -> str:
 
 @mcp.tool()
 def get_time(input: str = "") -> str:
-    """返回当前服务器时间（ISO8601）。"""
-    return datetime.now().isoformat(timespec="seconds")
+    """返回当前 UTC 时间（ISO8601，带时区，跨机器语义一致）。"""
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 @mcp.tool()

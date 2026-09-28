@@ -1,0 +1,31 @@
+# osv-scanner 配置：https://google.github.io/osv-scanner/configuration/
+# 仅忽略「无补丁版本可升」的传递依赖 unmaintained 通知（RUSTSEC informational），
+# 有实际修复版本的漏洞一律通过升级依赖解决，不得登记在这里。
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+reason = "glib 0.18 由 tauri/wry 的 Linux gtk 栈钉死，0.20 需升级 tauri 大版本；unmaintained 通知而非漏洞"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+reason = "proc-macro-error 未维护，为 tauri-build 等宏的传递依赖，无补丁版本"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0081"
+reason = "unic-char-property 未维护，传递依赖无补丁版本"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0075"
+reason = "unic-char-range 未维护，传递依赖无补丁版本"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0080"
+reason = "unic-common 未维护，传递依赖无补丁版本"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0100"
+reason = "unic-ucd-ident 未维护，传递依赖无补丁版本"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0098"
+reason = "unic-ucd-version 未维护，传递依赖无补丁版本"

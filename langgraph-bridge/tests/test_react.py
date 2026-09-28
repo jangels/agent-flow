@@ -20,7 +20,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import server as S  # noqa: E402
+import server as S
 
 PASS, FAIL = [], []
 
@@ -67,7 +67,7 @@ async def main() -> int:
     check("'*' 选中全部", len(all_tools) == len(tools_map), f"{len(all_tools)} 个")
     check("'all' 选中全部", len(S._select_tools(["all"], tools_map)) == len(tools_map))
 
-    full_name = sorted(tools_map.keys())[0]
+    full_name = min(tools_map.keys())
     bare = full_name.split("__")[-1]
     check(
         "全名匹配", [t.name for t in S._select_tools([full_name], tools_map)] == [bare]

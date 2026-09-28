@@ -36,7 +36,7 @@ os.environ["AGENT_FLOW_CHECKPOINT_DB"] = str(_TMP / "checkpoints.db")
 os.environ["AGENT_FLOW_HOME"] = str(_TMP)
 os.environ["AGENT_FLOW_DB"] = str(_TMP / "agent_flow.db")
 
-import server as S  # noqa: E402
+import server as S
 
 PASS, FAIL = [], []
 

@@ -123,10 +123,9 @@ import sys
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, ClassVar, TypedDict
 
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -135,6 +134,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command, interrupt
+from pydantic import BaseModel, ConfigDict, Field
 
 import flow_store
 
@@ -239,7 +239,7 @@ class MockReActModel:
         return [t.name for t in self.tools]
 
     # 计算类意图：必须有数字，且出现运算符或中文运算词（"加"没有 ASCII 符号）
-    CALC_WORDS = [
+    CALC_WORDS: ClassVar[tuple[str, ...]] = (
         "+",
         "-",
         "*",
@@ -253,8 +253,8 @@ class MockReActModel:
         "等于",
         "求和",
         "相加",
-    ]
-    CITIES = ["北京", "上海", "深圳", "杭州"]
+    )
+    CITIES: ClassVar[tuple[str, ...]] = ("北京", "上海", "深圳", "杭州")
 
     def _wants(self, task: str) -> list[str]:
         """推断任务需要哪几类工具（可能多个 -> 用来演示多轮循环）。"""
@@ -266,7 +266,7 @@ class MockReActModel:
         if re.search(r"\d", task) and any(w in task for w in self.CALC_WORDS):
             wants.append("add")
         if any(c in task for c in ["时间", "几点", "日期"]) or re.search(
-            r"\btime\b", task, re.I
+            r"\btime\b", task, re.IGNORECASE
         ):
             wants.append("time")
         return wants
@@ -351,28 +351,30 @@ class MockRouterModel:
     上游「今天北京天气怎么样」命中 -> 走第 0 个候选。
     """
 
-    POSITIVE_WORDS = ["是", "yes", "true", "可以", "正确"]
+    POSITIVE_WORDS: ClassVar[tuple[str, ...]] = ("是", "yes", "true", "可以", "正确")
     # 高频虚词组合，2-gram 命中它们不算语义命中（否则「是否」「用户」会误判）
-    WEAK_GRAMS = {
-        "是否",
-        "用户",
-        "判断",
-        "内容",
-        "如果",
-        "那么",
-        "否则",
-        "这个",
-        "文本",
-        "输入",
-        "上游",
-        "问题",
-        "询问",
-        "属于",
-        "以及",
-        "并且",
-        "或者",
-        "用于",
-    }
+    WEAK_GRAMS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "是否",
+            "用户",
+            "判断",
+            "内容",
+            "如果",
+            "那么",
+            "否则",
+            "这个",
+            "文本",
+            "输入",
+            "上游",
+            "问题",
+            "询问",
+            "属于",
+            "以及",
+            "并且",
+            "或者",
+            "用于",
+        }
+    )
 
     def __init__(self, n: int, expression: str = ""):
         self.n = max(1, int(n))
@@ -589,7 +591,7 @@ async def close_checkpointer() -> None:
     if conn is not None:
         try:
             await conn.close()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110 — 关闭失败可安全忽略
             pass
     _CHECKPOINTER = None
 
@@ -725,8 +727,7 @@ async def _react_tool_node(
         max_iter = int(raw_max) if raw_max is not None else 6
     except (TypeError, ValueError):
         max_iter = 6
-    if max_iter < 1:
-        max_iter = 1
+    max_iter = max(max_iter, 1)
     system = data.get("system") or (
         "你可以调用工具来完成任务。先判断需要哪个工具，再给出参数；"
         "信息足够后直接输出最终答复，不要继续调用工具。"
@@ -1393,7 +1394,7 @@ async def _compile_graph(
 
         cp = await get_checkpointer()
         return builder.compile(checkpointer=cp), nodes, edges
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         import traceback as _tb
 
         await q.put(
