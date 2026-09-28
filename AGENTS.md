@@ -368,7 +368,7 @@ bridge 侧三件套（缺一不可）：
 | 流程看起来「跑完了」，其实后半截没执行 | **`interrupt()` 不抛异常**，`ainvoke` 正常返回 | 每处 `ainvoke` 后都要查 `__interrupt__`（`_interrupt_of(result)`），否则暂停被当成正常结束 |
 | resume 请求成功但流程「从头又跑了一遍」 | `threadId` 不对（换成了新 run 的 id），实际开了条新流 | 用挂起时 `RUN_PAUSED` 返回的那个 `threadId`；服务端已加 `aget_state` 预检，无挂起点会报可读错误而非静默重跑 |
 | 图里明明有 `human` 节点但没挂起 | 走了 Rust 原生执行器 / 没走 bridge | Rust 侧已主动发 `warn` 并把整图委托给 bridge；确认 `LANGGRAPH_BRIDGE_URL` 可达 |
-| HITL 测试全 PASS 但进程不退出 | `aiosqlite` 工作线程非 daemon，连接未关 | 测试末尾 `await server.close_checkpointer()` |
+| 测试全 PASS 但进程不退出（不限 HITL） | 整图执行 → `_compile_graph` 无条件挂 checkpointer，aiosqlite 工作线程非 daemon，连接未关 | 每个测试脚本入口统一 `asyncio.run(S.close_checkpointer())`（test_react / test_condition / test_hitl 均已接入） |
 | 测试把断点写进了真实 `~/.agent-flow/` | checkpointer 是**进程级单例**，在 import `server` 时按环境变量初始化 | 测试必须在 **import `server` 之前**设 `AGENT_FLOW_CHECKPOINT_DB`（连同 `AGENT_FLOW_HOME` / `AGENT_FLOW_DB`）指向 `tempfile.mkdtemp()` |
 | 固定 `thread_id` 的测试用例间状态泄漏 | checkpointer（SQLite）持久化，多 run 场景 state 跨用例累积 | 每个用例用独立 `_tid()`（uuid）；需要断点续跑语义的用例在用例内部自持 thread |
 | 前端画布「闪一下全重挂载」 | 依赖数组里混入了高频状态，`nodeTypes` 重建 | 高频状态（`running`）用 `ref` 读，别进 `useMemo` 依赖 |

@@ -290,4 +290,8 @@ async def main() -> int:  # noqa: C901
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    # 整图执行会经 _compile_graph 无条件创建 checkpointer（SQLite → aiosqlite 非 daemon 线程）。
+    # 不关的话全部 PASS 后进程仍卡在 threading._shutdown，永远不退出（CI 上已踩）。
+    _code = asyncio.run(main())
+    asyncio.run(S.close_checkpointer())
+    raise SystemExit(_code)
