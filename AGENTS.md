@@ -39,7 +39,7 @@ Python bridge (langgraph-bridge/)      ← LangGraph 执行 + SQLite 只读 + MC
 | `src/types.ts` | 前端类型，**与 Rust 结构体镜像** | 改 Rust 结构体字段名必须同步改这里 |
 | `src/store.ts` | zustand（config / logs / running） | — |
 | `src/components/` | `FlowList` `Toolbar` `nodes` `Inspector` `Console` `Settings` | 节点视觉改 `nodes.tsx`；新增节点还得动 `Toolbar.tsx` 的 `PALETTE` |
-| `public/chat.html` | **发布即分享聊天页**（独立于 React app 的静态页） | 从 URL query 读 `flowId`/`bridgeUrl`/`name`，fetch bridge `/flows/{id}/run`；改样式/逻辑直接编辑此文件，无构建步骤 |
+| `public/chat.html` | **发布即分享聊天页**（独立于 React app 的静态页） | 从 URL query 读 `flowId`/`name`（`bridgeUrl` 可选，bridge 同源托管时不需要），fetch `/flows/{id}/run`；改样式/逻辑直接编辑此文件，无构建步骤 |
 | `src-tauri/src/lib.rs` | Tauri 命令 + **SQLite 存储层** + 数据目录解析 | 命令要同时加进 `invoke_handler!`；数据目录逻辑改动见「跨切面硬约束 1」 |
 | `src-tauri/src/workflow.rs` | Kahn 拓扑排序 + 节点执行 + `wf:event` 发射 | **环在这里被拦下**（67-72 行；Kahn 排不完只可能是环，孤立节点 in-degree=0 照样能排）；`condition` 直通 + `warn` 告警在 140-165 行；`tool` 节点委托 bridge 的分支在 166-193 行；**`human` 节点图级预检在 `node_map.is_empty()` 判断之后**——发现 human 就发 `warn` 并整图委托 |
 | `src-tauri/src/llm.rs` | OpenAI 兼容 `/chat/completions` 流式调用 | 只发 `token` 事件的来源；SSE 逐行解析 |
@@ -223,11 +223,14 @@ CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 | `GET /flows/{id}` | 单流程元信息（节点/边数量） | 404 |
 | `POST /flows/{id}/run` | **按 id 执行**：bridge 自取图，无需调用方知道图结构 | 404 不存在 / 409 未发布 / 422 空图 / 500 执行失败 |
 | `GET /mcp/tools` | 已加载的真实 MCP 工具名 | — |
+| `GET /chat.html` | 托管 `public/chat.html` 静态页——**聊天页与 API 同源，fetch 零 CORS** | 404 文件缺失 |
 | `GET /health` | 健康检查（含 db 路径 + **`checkpointer` 类型**） | — |
 
 `POST /flows/{id}/run` body（全部可选）：`input` / `config`（**不传 = 自动读 SQLite `kv['config']`**；传 `{}` = 强制零 key Mock）/ `mcp_servers` / `recursion_limit` / `stream`（默认 `true` SSE，`false` 返 JSON，返回体含 `recursionLimit` 与 `hasCycle`；**图含 `human` 时另含 `paused` / `awaiting` / `resumeUrl`**）。body 由 Pydantic 模型 `RunByIdBody` / `ResumeByIdBody` 声明（`extra="allow"`，字段全可选）——**Swagger 因此能渲染 Request body 表单**；改字段请同步改模型，别退回裸 `req.json()`。
 
-发布即分享入口已迁到前端：`public/chat.html` 从 URL query 读取 `flowId` / `bridgeUrl` / `name`，以非流式 `POST {bridgeUrl}/flows/{flowId}/run` 拿结果回填气泡，对 `ok` / `paused`（人工审批）/ `error` 三态都有处理。前端 `togglePublish` 发布成功后调用 `get_bridge_url()`（读 `LANGGRAPH_BRIDGE_URL`，默认 `http://127.0.0.1:8010`）拼出 `http://localhost:1420/chat.html?flowId=...&bridgeUrl=...&name=...` 弹窗给用户。bridge 不再生成页面，职责单一为 API。
+发布即分享入口：`public/chat.html` 同时被 vite（dev 调试）与 bridge `GET /chat.html`（**同源托管，生产推荐**）服务。页面读 URL query `flowId` / `name`，以非流式 `POST /flows/{flowId}/run` 拿结果回填气泡，对 `ok` / `paused`（人工审批）/ `error` 三态都有处理；bridge 地址优先级 = query `bridgeUrl`（旧链接兼容）> **bridge 同源**（`location.port === "8010"`，零 CORS）> `http://127.0.0.1:8010`。前端 `togglePublish` 发布成功后调用 `get_bridge_url()` 拼出 `{bridge}/chat.html?flowId=...&name=...` 弹窗给用户。bridge 不生成页面（只托管静态文件），职责单一为 API。
+
+> 为什么同源托管：跨源方案下 preflight 响应可能被浏览器代理/扩展劫持改写（实战出现过 `ACAO: http://localhost:8080` 导致 preflight 失败），同源请求根本不发 preflight，此类环境问题整类消失。
 
 `POST /flows/{id}/resume` body：
 

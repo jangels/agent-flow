@@ -73,7 +73,10 @@ function getParam(key) {
 }
 
 const FLOW_ID = getParam("flowId");
-const BRIDGE_URL = getParam("bridgeUrl").replace(/\/$/, "") || "http://127.0.0.1:8010";
+// bridge 地址优先级：URL 参数（旧链接兼容）> bridge 同源托管（location.port=8010，零 CORS）> 本机默认
+const BRIDGE_URL =
+  getParam("bridgeUrl").replace(/\/$/, "") ||
+  (location.port === "8010" ? location.origin : "http://127.0.0.1:8010");
 const FLOW_NAME = getParam("name") || "未命名流程";
 
 document.getElementById("flowName").textContent = FLOW_NAME;

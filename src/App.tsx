@@ -297,14 +297,13 @@ export default function App() {
         const f = await publishFlow(id, published);
         setFlows((l) => l.map((x) => (x.id === id ? f : x)));
         if (published) {
-          // 发布成功 -> 生成聊天分享链接（前端 public/chat.html，bridge 地址作为参数）
-          const bridge = await getBridgeUrl();
+          // 发布成功 -> 生成聊天分享链接（bridge 同源托管 /chat.html，fetch 无跨域）
+          const bridge = (await getBridgeUrl()).replace(/\/$/, "");
           const params = new URLSearchParams({
             flowId: id,
-            bridgeUrl: bridge,
             name: f.name || "未命名流程",
           });
-          setShareUrl(`http://localhost:1420/chat.html?${params.toString()}`);
+          setShareUrl(`${bridge}/chat.html?${params.toString()}`);
           pushLog(`🚀 「${f.name}」已发布 v${f.version} · 已生成聊天链接`);
         } else {
           setShareUrl(null);

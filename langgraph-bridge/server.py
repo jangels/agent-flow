@@ -127,7 +127,7 @@ from typing import Annotated, Any, ClassVar, TypedDict
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.errors import GraphRecursionError
@@ -1948,6 +1948,20 @@ async def mcp_tools():
     """列出当前已加载的真实 MCP 工具（默认连内置 demo server）。"""
     tools_map = await _load_mcp_tools(None)
     return {"tools": sorted(tools_map.keys())}
+
+
+@app.get("/chat.html")
+async def chat_page():
+    """托管聊天静态页。
+
+    页面与 API 同源，浏览器 fetch 不产生跨域请求——
+    从根上消灭 CORS preflight（代理/扩展劫持跨源响应导致的
+    「ACAO 不匹配」问题在同源模型下不存在）。
+    """
+    html = Path(__file__).resolve().parent.parent / "public" / "chat.html"
+    if not html.is_file():
+        raise HTTPException(status_code=404, detail="public/chat.html 不存在")
+    return FileResponse(html, media_type="text/html")
 
 
 @app.get("/health")
