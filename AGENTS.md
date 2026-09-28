@@ -14,7 +14,7 @@ macOS 桌面应用（Tauri v2 + React + Rust）做 **Agent 工作流可视化编
 
 ---
 
-## Core design
+### Core design
 
 三层结构，**层与层之间只靠两个契约通信**（改任何一层前先认清契约）：
 
@@ -26,7 +26,7 @@ Rust 引擎 (src-tauri/src/)             ← 契约2: HTTP + AG-UI 协议
 Python bridge (langgraph-bridge/)      ← LangGraph 执行 + SQLite 只读 + MCP 入口
 ```
 
-### 节点 `data` 字段（`src/types.ts` → `AgentNodeData`）
+#### 节点 `data` 字段（`src/types.ts` → `AgentNodeData`）
 
 | 节点 | 字段 | 说明 |
 |---|---|---|
@@ -48,7 +48,7 @@ Python bridge (langgraph-bridge/)      ← LangGraph 执行 + SQLite 只读 + MC
 
 > ⚠️ `human` 节点是**唯一**在「`data` 里没有配置也必须执行特殊逻辑」的节点——即使用户什么都不填，跑到它也必须挂起，不能当成空节点直通。
 
-### `wf:event` 内部事件（前端唯一消费模型）
+#### `wf:event` 内部事件（前端唯一消费模型）
 
 | type | 关键字段 | 语义 |
 |---|---|---|
@@ -62,7 +62,7 @@ Python bridge (langgraph-bridge/)      ← LangGraph 执行 + SQLite 只读 + MC
 | `warn` | `id`, `message` | 引擎告警，只进 Console。来源：① Rust 原生路径遇出边 ≥ 2 的 `condition`；② **Rust 原生路径图中含 `human` 节点**（改走整图委托） |
 | `workflow:done` | `result`, `paused` | 整流程结束（**成功与失败共用此事件**，失败时 result 带错误前缀）。`paused: true` 表示「本次 run 结束，但流程没结束，在等人」（HITL 第三态） |
 
-### AG-UI → `wf:event` 映射（在 `bridge.rs::translate_agui`）
+#### AG-UI → `wf:event` 映射（在 `bridge.rs::translate_agui`）
 
 | AG-UI 事件 | 结果 |
 |---|---|
@@ -84,7 +84,7 @@ Python bridge (langgraph-bridge/)      ← LangGraph 执行 + SQLite 只读 + MC
 > 应用扩展字段：`STEP_FINISHED.output` 与 `RUN_FINISHED.result` 是**非 AG-UI 标准**的补充字段，用于回填内部模型。新增扩展字段请在同一处注释说明。
 > **`RUN_PAUSED` 同理**：AG-UI 标准里没有「暂停」语义，故自定义；配套约定是**暂停后必补一条 `RUN_FINISHED` 且 `paused: true`**——只发 `RUN_PAUSED` 会让调用方以为流断了。
 
-### SQLite schema（`~/.agent-flow/agent_flow.db`）
+#### SQLite schema（`~/.agent-flow/agent_flow.db`）
 
 ```sql
 PRAGMA journal_mode=WAL;
@@ -106,7 +106,7 @@ CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 > **HITL 断点不在这个库里**：LangGraph checkpointer 写的是同目录的 `checkpoints.db`（`AsyncSqliteSaver` 管理，schema 由 langgraph-checkpoint 定义）。两张库**互不干涉**：删 `flows` 行不会清掉别人等待中的断点。
 
-### bridge HTTP 端点
+#### bridge HTTP 端点
 
 | 端点 | 作用 | 错误 |
 |---|---|---|
@@ -133,7 +133,7 @@ CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 > 为什么同源托管：跨源方案下 preflight 响应可能被浏览器代理/扩展劫持改写（实战出现过 `ACAO: http://localhost:8080` 导致 preflight 失败），同源请求根本不发 preflight，此类环境问题整类消失。
 
-### 环境变量
+#### 环境变量
 
 | 变量 | 作用 | 默认 | 读取方 |
 |---|---|---|---|
