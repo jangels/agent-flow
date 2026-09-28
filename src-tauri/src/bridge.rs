@@ -188,8 +188,14 @@ fn translate_agui(ev: &Value, st: &mut TranslateState) -> Option<Option<Value>> 
     match etype {
         "STEP_STARTED" => {
             let id = ev["stepName"].as_str().unwrap_or("").to_string();
-            st.active_node = if id.is_empty() { None } else { Some(id.clone()) };
-            Some(Some(json!({"type": "node:start", "id": id, "nodeType": ev["nodeType"]})))
+            st.active_node = if id.is_empty() {
+                None
+            } else {
+                Some(id.clone())
+            };
+            Some(Some(
+                json!({"type": "node:start", "id": id, "nodeType": ev["nodeType"]}),
+            ))
         }
         "TEXT_MESSAGE_START" => {
             if let Some(mid) = ev["messageId"].as_str() {
@@ -240,7 +246,8 @@ fn translate_agui(ev: &Value, st: &mut TranslateState) -> Option<Option<Value>> 
             let name = ev["toolCallName"].as_str().unwrap_or("工具").to_string();
             let node = st.active_node.clone().unwrap_or_default();
             if !tcid.is_empty() {
-                st.tool_map.insert(tcid.clone(), (node.clone(), name.clone()));
+                st.tool_map
+                    .insert(tcid.clone(), (node.clone(), name.clone()));
             }
             Some(Some(json!({
                 "type": "tool:start",
@@ -357,7 +364,11 @@ mod tests {
         assert_eq!(out["delta"], "计算 3 加 5");
 
         // END 无新增信息，被吸收
-        assert!(one(json!({"type": "TOOL_CALL_END", "toolCallId": "tc_t1"}), &mut st).is_none());
+        assert!(one(
+            json!({"type": "TOOL_CALL_END", "toolCallId": "tc_t1"}),
+            &mut st
+        )
+        .is_none());
 
         // RESULT 到达时 active_node 已清空，靠 tool_map 回查节点与工具名
         st.active_node = None;
@@ -377,7 +388,10 @@ mod tests {
     #[test]
     fn text_stream_keeps_node_attribution() {
         let mut st = TranslateState::default();
-        one(json!({"type": "STEP_STARTED", "stepName": "n_llm"}), &mut st);
+        one(
+            json!({"type": "STEP_STARTED", "stepName": "n_llm"}),
+            &mut st,
+        );
         assert!(one(
             json!({"type": "TEXT_MESSAGE_START", "messageId": "msg_n_llm"}),
             &mut st
@@ -505,7 +519,10 @@ mod tests {
         std::env::set_var("LANGGRAPH_BRIDGE_URL", "http://127.0.0.1:8000");
         assert_eq!(bridge_origin(), "http://127.0.0.1:8000");
 
-        std::env::set_var("LANGGRAPH_BRIDGE_URL", "https://bridge.example.com:9443/some/base");
+        std::env::set_var(
+            "LANGGRAPH_BRIDGE_URL",
+            "https://bridge.example.com:9443/some/base",
+        );
         assert_eq!(bridge_origin(), "https://bridge.example.com:9443");
 
         match saved {
@@ -528,7 +545,10 @@ mod tests {
         .expect("STEP_FINISHED 应产生事件");
         assert_eq!(out["type"], "node:done");
         assert_eq!(out["id"], "n_cond");
-        assert_eq!(out["output"], "上游内容", "condition 的输出应直通上游，不被判定污染");
+        assert_eq!(
+            out["output"], "上游内容",
+            "condition 的输出应直通上游，不被判定污染"
+        );
         assert_eq!(out["branch"], "t_yes");
         assert_eq!(out["branchLabel"], "查天气");
         assert_eq!(out["branchReason"], "命中判据");
@@ -605,7 +625,10 @@ mod tests {
             &mut st,
         )
         .unwrap();
-        assert_eq!(r1["toolName"], "get_time", "第 1 轮不能被第 0 轮的工具名污染");
+        assert_eq!(
+            r1["toolName"], "get_time",
+            "第 1 轮不能被第 0 轮的工具名污染"
+        );
         assert_eq!(r1["content"], "2026-09-24T00:41:00");
 
         // 两轮结束后映射应全部清理，不残留

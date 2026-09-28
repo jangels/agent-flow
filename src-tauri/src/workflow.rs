@@ -193,8 +193,14 @@ pub async fn execute(
             }
             "tool" => {
                 let tool = data["tool"].as_str().unwrap_or("unknown").to_string();
-                let has_react_tools = data["tools"].as_array().map(|a| !a.is_empty()).unwrap_or(false);
-                let has_mcp_tool = data["mcp_tool"].as_str().map(|s| !s.is_empty()).unwrap_or(false);
+                let has_react_tools = data["tools"]
+                    .as_array()
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false);
+                let has_mcp_tool = data["mcp_tool"]
+                    .as_str()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
                 // 路径 A 集成：tool 节点委托 langgraph-bridge 服务执行整图
                 // 触发条件：显式 bridge 开关 / 配置了 ReAct 白名单 / 配置了 MCP 单工具
                 if tool == "langgraph"

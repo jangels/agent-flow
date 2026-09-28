@@ -1,6 +1,6 @@
+mod bridge;
 mod llm;
 mod workflow;
-mod bridge;
 
 use std::sync::Mutex;
 
@@ -307,7 +307,11 @@ fn migrate_legacy(app: &tauri::AppHandle, conn: &Connection) -> Result<(), Strin
         let p = legacy.join("workflow.json");
         if let Ok(s) = std::fs::read_to_string(&p) {
             if let Ok(g) = serde_json::from_str::<Value>(&s) {
-                if g["nodes"].as_array().map(|a| !a.is_empty()).unwrap_or(false) {
+                if g["nodes"]
+                    .as_array()
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false)
+                {
                     let f = Flow {
                         id: new_id(),
                         name: "默认流程".to_string(),
@@ -490,7 +494,13 @@ fn export_flow(app: tauri::AppHandle, id: String) -> Result<String, String> {
     let safe: String = f
         .name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let path = dir.join(format!("{}-{}.json", safe, f.id));
     let s = serde_json::to_string_pretty(&f).map_err(|e| e.to_string())?;
@@ -580,6 +590,39 @@ async fn run_workflow(
     workflow::execute(&app, &config, workflow, None).await
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let cfg = load_config(&handle);
+            app.manage(AppState {
+                config: Mutex::new(cfg),
+            });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            run_workflow,
+            save_workflow,
+            load_workflow,
+            get_config,
+            set_config,
+            list_flows,
+            get_active_flow,
+            create_flow,
+            save_flow,
+            delete_flow,
+            set_active_flow,
+            publish_flow,
+            export_flow,
+            run_flow,
+            resume_flow,
+            get_bridge_url
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
 // ---------------------------------------------------------------------------
 // 测试：数据目录解析必须与 Python 侧 flow_store.py 完全一致
 // ---------------------------------------------------------------------------
@@ -616,37 +659,4 @@ mod tests {
         // 两端共用的常量：改这里必须同步改 flow_store.py 的 DATA_DIR_NAME
         assert_eq!(DATA_DIR_NAME, ".agent-flow");
     }
-}
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .setup(|app| {
-            let handle = app.handle().clone();
-            let cfg = load_config(&handle);
-            app.manage(AppState {
-                config: Mutex::new(cfg),
-            });
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            run_workflow,
-            save_workflow,
-            load_workflow,
-            get_config,
-            set_config,
-            list_flows,
-            get_active_flow,
-            create_flow,
-            save_flow,
-            delete_flow,
-            set_active_flow,
-            publish_flow,
-            export_flow,
-            run_flow,
-            resume_flow,
-            get_bridge_url
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }

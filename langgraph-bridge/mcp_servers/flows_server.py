@@ -38,6 +38,7 @@
       }
     }
 """
+
 from __future__ import annotations
 
 import os
@@ -69,8 +70,10 @@ def list_published_flows() -> str:
     """列出 agent-flow 中所有【已发布】的流程（id / 名称 / 版本）。"""
     flows = flow_store.list_flows(published_only=True)
     if not flows:
-        return ("当前没有已发布的流程"
-                f"（库：{flow_store.db_path()}；在 agent-flow 里点「发布」后即可在此处看到）。")
+        return (
+            "当前没有已发布的流程"
+            f"（库：{flow_store.db_path()}；在 agent-flow 里点「发布」后即可在此处看到）。"
+        )
     lines = [
         f"- {f.get('id')} · {f.get('name', '未命名')} · v{f.get('version', 1)}"
         for f in flows
@@ -99,15 +102,14 @@ async def run_flow(flow_id: str, input: str = "") -> str:
         async with httpx.AsyncClient(timeout=300) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code != 200:
-                return (
-                    f"[错误] 执行后端 {resp.status_code}: "
-                    f"{resp.text[:400]}"
-                )
+                return f"[错误] 执行后端 {resp.status_code}: {resp.text[:400]}"
             data = resp.json()
             return data.get("result") or "[错误] 未收到执行结果"
     except Exception as e:  # noqa: BLE001
-        return (f"[错误] 调用执行后端失败"
-                f"（请确认 langgraph-bridge 已在 {_bridge_base()} 运行）: {e}")
+        return (
+            f"[错误] 调用执行后端失败"
+            f"（请确认 langgraph-bridge 已在 {_bridge_base()} 运行）: {e}"
+        )
 
 
 if __name__ == "__main__":

@@ -138,6 +138,7 @@ from langgraph.types import Command, interrupt
 
 import flow_store
 
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     """应用关闭时归还 checkpointer 的 SQLite 连接（避免 WAL 锁残留）。"""
@@ -173,6 +174,7 @@ _NO_RESUME: Any = object()
 # 零 key 的「假 LLM」与 mock 工具（MCP 未命中时的 fallback）
 # --------------------------------------------------------------------------
 
+
 class MockChatModel:
     """确定性假 LLM：根据用户输入规则生成文本，不调任何外部 API。"""
 
@@ -194,19 +196,28 @@ def _mock_tool(inp: str) -> str:
     if re.search(r"\d", inp) and any(op in inp for op in "+-*/"):
         expr = re.sub(r"[^0-9+\-*/(). ]", "", inp)
         try:
-            return f"calculator({expr}) = {eval(expr, {"__builtins__": {}}, {})}"
+            # eval 环境显式清空 __builtins__；引号用单引号避免 f-string 复用双引号（py3.11 不允许）
+            safe_globals = {"__builtins__": {}}
+            return f"calculator({expr}) = {eval(expr, safe_globals, {})}"
         except Exception as e:  # noqa: BLE001
             return f"calculator error: {e}"
     for city in ["北京", "上海", "深圳", "杭州"]:
         if city in inp:
-            data = {"北京": "晴 26°C", "上海": "多云 30°C", "深圳": "雷阵雨 28°C", "杭州": "阴 24°C"}
+            data = {
+                "北京": "晴 26°C",
+                "上海": "多云 30°C",
+                "深圳": "雷阵雨 28°C",
+                "杭州": "阴 24°C",
+            }
             return f"get_weather({city}) = {data[city]}"
     return f"search('{inp[:20]}') = [mock] 找到 3 条相关条目: A/B/C"
 
 
 def _tokenize(text: str) -> list[str]:
     """把整段文本切成流式分片：中文逐字、英文数字按词（零 key 演示用）。"""
-    return [t for t in re.findall(r"[\u4e00-\u9fff]|[A-Za-z0-9_]+|\s+|[^\s]", text) if t]
+    return [
+        t for t in re.findall(r"[\u4e00-\u9fff]|[A-Za-z0-9_]+|\s+|[^\s]", text) if t
+    ]
 
 
 class MockReActModel:
@@ -228,17 +239,35 @@ class MockReActModel:
         return [t.name for t in self.tools]
 
     # 计算类意图：必须有数字，且出现运算符或中文运算词（"加"没有 ASCII 符号）
-    CALC_WORDS = ["+", "-", "*", "/", "×", "÷", "加", "减", "乘", "除", "等于", "求和", "相加"]
+    CALC_WORDS = [
+        "+",
+        "-",
+        "*",
+        "/",
+        "×",
+        "÷",
+        "加",
+        "减",
+        "乘",
+        "除",
+        "等于",
+        "求和",
+        "相加",
+    ]
     CITIES = ["北京", "上海", "深圳", "杭州"]
 
     def _wants(self, task: str) -> list[str]:
         """推断任务需要哪几类工具（可能多个 -> 用来演示多轮循环）。"""
         wants: list[str] = []
-        if any(c in task for c in ["天气", "气温"]) or any(c in task for c in self.CITIES):
+        if any(c in task for c in ["天气", "气温"]) or any(
+            c in task for c in self.CITIES
+        ):
             wants.append("weather")
         if re.search(r"\d", task) and any(w in task for w in self.CALC_WORDS):
             wants.append("add")
-        if any(c in task for c in ["时间", "几点", "日期"]) or re.search(r"\btime\b", task, re.I):
+        if any(c in task for c in ["时间", "几点", "日期"]) or re.search(
+            r"\btime\b", task, re.I
+        ):
             wants.append("time")
         return wants
 
@@ -275,10 +304,17 @@ class MockReActModel:
         def call(tool_name: str) -> AIMessage:
             tool = next((t for t in self.tools if t.name == tool_name), None)
             args = self._args_for(tool, task) if tool is not None else {"input": task}
-            return AIMessage(content="", tool_calls=[{
-                "name": tool_name, "args": args,
-                "id": f"call_mock_{len(done) + 1}", "type": "tool_call",
-            }])
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": tool_name,
+                        "args": args,
+                        "id": f"call_mock_{len(done) + 1}",
+                        "type": "tool_call",
+                    }
+                ],
+            )
 
         # 逐个满足识别出的意图；已调过的工具不重复调 -> 多意图任务天然跑成多轮
         wants = self._wants(task)
@@ -294,7 +330,9 @@ class MockReActModel:
                 return call(hit)
 
         summary = "；".join(str(m.content) for m in results)
-        return AIMessage(content=f"已取得工具返回结果：{summary}" if summary else "任务已完成。")
+        return AIMessage(
+            content=f"已取得工具返回结果：{summary}" if summary else "任务已完成。"
+        )
 
     async def ainvoke(self, messages) -> AIMessage:
         return self.invoke(messages)
@@ -316,8 +354,24 @@ class MockRouterModel:
     POSITIVE_WORDS = ["是", "yes", "true", "可以", "正确"]
     # 高频虚词组合，2-gram 命中它们不算语义命中（否则「是否」「用户」会误判）
     WEAK_GRAMS = {
-        "是否", "用户", "判断", "内容", "如果", "那么", "否则", "这个", "文本",
-        "输入", "上游", "问题", "询问", "属于", "以及", "并且", "或者", "用于",
+        "是否",
+        "用户",
+        "判断",
+        "内容",
+        "如果",
+        "那么",
+        "否则",
+        "这个",
+        "文本",
+        "输入",
+        "上游",
+        "问题",
+        "询问",
+        "属于",
+        "以及",
+        "并且",
+        "或者",
+        "用于",
     }
 
     def __init__(self, n: int, expression: str = ""):
@@ -354,12 +408,20 @@ class MockRouterModel:
                 break
         hit = self._hit(task)
         idx = 0 if hit else self.n - 1
-        return AIMessage(content="", tool_calls=[{
-            "name": "choose_branch",
-            "args": {"index": idx, "reason": "命中判据关键词" if hit else "未命中判据关键词"},
-            "id": "call_route_1",
-            "type": "tool_call",
-        }])
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "choose_branch",
+                    "args": {
+                        "index": idx,
+                        "reason": "命中判据关键词" if hit else "未命中判据关键词",
+                    },
+                    "id": "call_route_1",
+                    "type": "tool_call",
+                }
+            ],
+        )
 
     async def ainvoke(self, messages) -> AIMessage:
         return self.invoke(messages)
@@ -369,18 +431,21 @@ class MockRouterModel:
 # 真实 MCP：用 langchain-mcp-adapters 连接标准 MCP server，加载工具
 # --------------------------------------------------------------------------
 
+
 def _demo_mcp_servers() -> list[dict]:
     """默认连内置 demo MCP server（stdio，符合 MCP 协议，非 mock）。"""
     demo_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "mcp_servers", "demo_server.py"
     )
-    return [{
-        "name": "demo",
-        "transport": "stdio",
-        "command": sys.executable,
-        "args": [demo_path],
-        "encoding": "utf-8",
-    }]
+    return [
+        {
+            "name": "demo",
+            "transport": "stdio",
+            "command": sys.executable,
+            "args": [demo_path],
+            "encoding": "utf-8",
+        }
+    ]
 
 
 async def _load_mcp_tools(mcp_servers: list[dict] | None) -> dict[str, Any]:
@@ -442,9 +507,10 @@ def _normalize_mcp_output(out) -> str:
 # LangGraph State（outputs 用 list + operator.add，LangGraph 对 list 最友好）
 # --------------------------------------------------------------------------
 
+
 class WFState(TypedDict):
-    outputs: Annotated[list, operator.add]      # [{"id": node_id, "text": str}, ...]
-    messages: Annotated[list, add_messages]      # LLM 节点的对话历史
+    outputs: Annotated[list, operator.add]  # [{"id": node_id, "text": str}, ...]
+    messages: Annotated[list, add_messages]  # LLM 节点的对话历史
 
 
 def _state_outputs(state) -> list:
@@ -499,8 +565,11 @@ async def get_checkpointer():
 
         _CHECKPOINTER = InMemorySaver()
         _CHECKPOINTER_KIND = "memory"
-        print(f"[HITL] SQLite checkpointer 不可用（{type(e).__name__}: {e}），"
-              f"已回退 InMemorySaver —— 挂起态在进程重启后丢失", flush=True)
+        print(
+            f"[HITL] SQLite checkpointer 不可用（{type(e).__name__}: {e}），"
+            f"已回退 InMemorySaver —— 挂起态在进程重启后丢失",
+            flush=True,
+        )
 
     if _CHECKPOINTER_KIND and _CHECKPOINTER_KIND.startswith("sqlite"):
         print(f"[HITL] checkpointer = SQLite ({path})", flush=True)
@@ -529,13 +598,20 @@ async def close_checkpointer() -> None:
 # 工具节点：发 AG-UI TOOL_CALL_* 事件，返回输出文本
 # --------------------------------------------------------------------------
 
-async def _tool_node(data: dict, inp: str, q: asyncio.Queue, nid: str,
-                     mcp_tool=None) -> str:
+
+async def _tool_node(
+    data: dict, inp: str, q: asyncio.Queue, nid: str, mcp_tool=None
+) -> str:
     tc_id = f"tc_{nid}"
     # 真实 MCP 工具优先：调用标准 MCP 协议工具，发完整 TOOL_CALL_* 事件
     if mcp_tool is not None:
-        await q.put({"type": "TOOL_CALL_START", "toolCallId": tc_id,
-                     "toolCallName": mcp_tool.name})
+        await q.put(
+            {
+                "type": "TOOL_CALL_START",
+                "toolCallId": tc_id,
+                "toolCallName": mcp_tool.name,
+            }
+        )
         await q.put({"type": "TOOL_CALL_ARGS", "toolCallId": tc_id, "delta": inp})
         await q.put({"type": "TOOL_CALL_END", "toolCallId": tc_id})
         try:
@@ -543,13 +619,15 @@ async def _tool_node(data: dict, inp: str, q: asyncio.Queue, nid: str,
             out = _normalize_mcp_output(out)
         except Exception as e:  # noqa: BLE001
             out = f"[MCP 工具错误] {e}"
-        await q.put({
-            "type": "TOOL_CALL_RESULT",
-            "messageId": f"msg_{nid}",
-            "toolCallId": tc_id,
-            "content": out,
-            "role": "tool",
-        })
+        await q.put(
+            {
+                "type": "TOOL_CALL_RESULT",
+                "messageId": f"msg_{nid}",
+                "toolCallId": tc_id,
+                "content": out,
+                "role": "tool",
+            }
+        )
         return out
     # fallback：本地 mock
     tool = data.get("tool") or "mock"
@@ -557,13 +635,15 @@ async def _tool_node(data: dict, inp: str, q: asyncio.Queue, nid: str,
     await q.put({"type": "TOOL_CALL_ARGS", "toolCallId": tc_id, "delta": inp})
     await q.put({"type": "TOOL_CALL_END", "toolCallId": tc_id})
     out = _mock_tool(inp)
-    await q.put({
-        "type": "TOOL_CALL_RESULT",
-        "messageId": f"msg_{nid}",
-        "toolCallId": tc_id,
-        "content": out,
-        "role": "tool",
-    })
+    await q.put(
+        {
+            "type": "TOOL_CALL_RESULT",
+            "messageId": f"msg_{nid}",
+            "toolCallId": tc_id,
+            "content": out,
+            "role": "tool",
+        }
+    )
     return out
 
 
@@ -577,6 +657,7 @@ async def _tool_node(data: dict, inp: str, q: asyncio.Queue, nid: str,
 # 循环封在一个 LangGraph 节点内部，对外只有一次 STEP_STARTED / STEP_FINISHED，
 # 因此图的形状不变 —— Rust 侧拓扑排序与环检测对本循环完全无感（零引擎改动）。
 # --------------------------------------------------------------------------
+
 
 def _as_list(v) -> list[str]:
     """把 data.tools 规范化为字符串列表（支持数组、逗号/换行分隔的字符串）。"""
@@ -597,8 +678,9 @@ def _select_tools(whitelist: list[str], tools_map: dict) -> list:
     return [t for k, t in tools_map.items() if k in wanted or t.name in wanted]
 
 
-async def _model_step(model, messages, q: asyncio.Queue, msg_id: str, is_mock: bool,
-                      emit: bool = True):
+async def _model_step(
+    model, messages, q: asyncio.Queue, msg_id: str, is_mock: bool, emit: bool = True
+):
     """跑一步模型调用：边流式外发边累积，返回 (文本, tool_calls)。
 
     真实模型走 astream（AIMessageChunk 支持 `+` 合并，能把分散在多片里的
@@ -612,22 +694,30 @@ async def _model_step(model, messages, q: asyncio.Queue, msg_id: str, is_mock: b
         text = resp.content or ""
         if emit:
             for tok in _tokenize(text):
-                await q.put({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": tok})
+                await q.put(
+                    {"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": tok}
+                )
         return text, (resp.tool_calls or [])
 
     merged = None
     async for chunk in model.astream(messages):
         merged = chunk if merged is None else merged + chunk
         if chunk.content and emit:
-            await q.put({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id,
-                         "delta": chunk.content})
+            await q.put(
+                {
+                    "type": "TEXT_MESSAGE_CONTENT",
+                    "messageId": msg_id,
+                    "delta": chunk.content,
+                }
+            )
     if merged is None:
         return "", []
     return (merged.content or ""), (getattr(merged, "tool_calls", None) or [])
 
 
-async def _react_tool_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue,
-                           nid: str, tools: list) -> str:
+async def _react_tool_node(
+    data: dict, inp: str, cfg: dict, q: asyncio.Queue, nid: str, tools: list
+) -> str:
     """模型在节点内部循环：决定 -> 调工具 -> 回灌结果 -> 再决定，直到不再要工具。"""
     # 注意不能用 `data.get("max_iterations") or 6`：0 是 falsy，会被误吞成 6
     raw_max = data.get("max_iterations")
@@ -665,7 +755,9 @@ async def _react_tool_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue,
 
     for i in range(max_iter):
         msg_id = f"msg_{nid}_r{i}"
-        await q.put({"type": "TEXT_MESSAGE_START", "messageId": msg_id, "role": "assistant"})
+        await q.put(
+            {"type": "TEXT_MESSAGE_START", "messageId": msg_id, "role": "assistant"}
+        )
         text, calls = await _model_step(model, messages, q, msg_id, not has_key)
         await q.put({"type": "TEXT_MESSAGE_END", "messageId": msg_id})
 
@@ -677,22 +769,34 @@ async def _react_tool_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue,
         # 回灌 assistant 轮（含 tool_calls），否则下一轮模型看不到自己刚要求过什么
         call_records = []
         for k, c in enumerate(calls):
-            call_records.append({
-                "name": c.get("name", ""),
-                "args": c.get("args") or {},
-                "id": c.get("id") or f"call_{i}_{k}",
-                "type": "tool_call",
-            })
+            call_records.append(
+                {
+                    "name": c.get("name", ""),
+                    "args": c.get("args") or {},
+                    "id": c.get("id") or f"call_{i}_{k}",
+                    "type": "tool_call",
+                }
+            )
         messages.append(AIMessage(content=text, tool_calls=call_records))
 
         for k, rec in enumerate(call_records):
             tool = by_name.get(rec["name"])
             # 轮次+序号后缀：与 Rust 侧 toolCallId -> (node, tool) 映射一一对应
             tc_id = f"tc_{nid}_r{i}_{k}"
-            await q.put({"type": "TOOL_CALL_START", "toolCallId": tc_id,
-                         "toolCallName": rec["name"]})
-            await q.put({"type": "TOOL_CALL_ARGS", "toolCallId": tc_id,
-                         "delta": json.dumps(rec["args"], ensure_ascii=False)})
+            await q.put(
+                {
+                    "type": "TOOL_CALL_START",
+                    "toolCallId": tc_id,
+                    "toolCallName": rec["name"],
+                }
+            )
+            await q.put(
+                {
+                    "type": "TOOL_CALL_ARGS",
+                    "toolCallId": tc_id,
+                    "delta": json.dumps(rec["args"], ensure_ascii=False),
+                }
+            )
             await q.put({"type": "TOOL_CALL_END", "toolCallId": tc_id})
             try:
                 if tool is None:
@@ -701,16 +805,28 @@ async def _react_tool_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue,
                     out = _normalize_mcp_output(await tool.ainvoke(rec["args"]))
             except Exception as e:  # noqa: BLE001
                 out = f"[工具错误] {rec['name']}: {e}"
-            used.append({"round": i, "tool": rec["name"], "args": rec["args"], "result": out})
-            await q.put({"type": "TOOL_CALL_RESULT", "messageId": msg_id,
-                         "toolCallId": tc_id, "content": out, "role": "tool"})
-            messages.append(ToolMessage(content=str(out), tool_call_id=rec["id"],
-                                        name=rec["name"]))
+            used.append(
+                {"round": i, "tool": rec["name"], "args": rec["args"], "result": out}
+            )
+            await q.put(
+                {
+                    "type": "TOOL_CALL_RESULT",
+                    "messageId": msg_id,
+                    "toolCallId": tc_id,
+                    "content": out,
+                    "role": "tool",
+                }
+            )
+            messages.append(
+                ToolMessage(content=str(out), tool_call_id=rec["id"], name=rec["name"])
+            )
 
     if hit_limit:
         last = used[-1]["result"] if used else "无"
-        final = (f"[达到最大迭代轮数 {max_iter}] 已执行 {len(used)} 次工具调用仍未收敛。"
-                 f"最后一次结果：{last}")
+        final = (
+            f"[达到最大迭代轮数 {max_iter}] 已执行 {len(used)} 次工具调用仍未收敛。"
+            f"最后一次结果：{last}"
+        )
     return final
 
 
@@ -722,6 +838,7 @@ async def _react_tool_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue,
 #   因此判定放在【节点内部】完成，结果写进 state（outputs 条目里的 branch 字段），
 #   router 只做纯查表。附带好处：判定进入执行轨迹，可观测 / 可回放。
 # --------------------------------------------------------------------------
+
 
 def _route_tool(candidates: list[dict]) -> dict:
     """把候选分支编码成 choose_branch 工具的 JSON Schema（封闭菜单）。
@@ -774,8 +891,9 @@ def _route_index(calls, n: int, text: str = "") -> tuple[int, str]:
     return -1, ""
 
 
-async def _condition_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue,
-                          nid: str, candidates: list[dict]) -> tuple[str, str, str, str]:
+async def _condition_node(
+    data: dict, inp: str, cfg: dict, q: asyncio.Queue, nid: str, candidates: list[dict]
+) -> tuple[str, str, str, str]:
     """分支判定，返回（直通下游的文本, 选中的 target id, 候选可读名, 理由）。
 
     直通语义：condition 不改变数据，只决定走哪条边 —— 因此返回的文本 = 上游文本。
@@ -806,7 +924,9 @@ async def _condition_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue,
 
         base = ChatOpenAI(
             # 路由用便宜快的小模型（Anthropic 对 Routing pattern 的明确建议）
-            model=data.get("model") or cfg.get("router_model") or cfg.get("model", "gpt-4o-mini"),
+            model=data.get("model")
+            or cfg.get("router_model")
+            or cfg.get("model", "gpt-4o-mini"),
             base_url=cfg.get("base_url"),
             api_key=cfg["api_key"],
             temperature=0,  # 路由要稳定可复现，不要发挥
@@ -818,7 +938,11 @@ async def _condition_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue,
         # prompt 里含判据本身，关键词规则会对判据自我命中（真实模型靠语义理解不受影响）。
         text, calls = await _model_step(
             MockRouterModel(len(candidates), expression),
-            [HumanMessage(content=inp)], q, msg_id, True, emit=False,
+            [HumanMessage(content=inp)],
+            q,
+            msg_id,
+            True,
+            emit=False,
         )
 
     idx, reason = _route_index(calls, len(candidates), text)
@@ -843,12 +967,7 @@ def _candidates_of(nid: str, edges: list, nodes: dict) -> list[dict]:
             continue
         seen.add(t)
         tdata = nodes[t].get("data") or {}
-        label = (
-            e.get("label")
-            or e.get("sourceHandle")
-            or tdata.get("label")
-            or t
-        )
+        label = e.get("label") or e.get("sourceHandle") or tdata.get("label") or t
         out.append({"target": t, "label": str(label)})
     return out
 
@@ -856,6 +975,7 @@ def _candidates_of(nid: str, edges: list, nodes: dict) -> list[dict]:
 # --------------------------------------------------------------------------
 # 环检测与执行上限
 # --------------------------------------------------------------------------
+
 
 def _find_cycle(nodes: dict, edges: list) -> list[str] | None:
     """DFS 找出图中的一条环（返回节点 id 路径，首尾同点）；无环返回 None。
@@ -878,8 +998,8 @@ def _find_cycle(nodes: dict, edges: list) -> list[str] | None:
         color[u] = GRAY
         path.append(u)
         for v in adj[u]:
-            if color[v] == GRAY:           # 命中回边：截出环
-                return path[path.index(v):] + [v]
+            if color[v] == GRAY:  # 命中回边：截出环
+                return path[path.index(v) :] + [v]
             if color[v] == WHITE:
                 r = dfs(v)
                 if r:
@@ -912,7 +1032,9 @@ def _resolve_recursion_limit(wf: dict, n_nodes: int, has_cycle: bool) -> int:
             if v > 0:
                 return v
         except (TypeError, ValueError):
-            print(f"[bridge] 忽略非法的 recursion_limit={raw!r}，改用按图推算", flush=True)
+            print(
+                f"[bridge] 忽略非法的 recursion_limit={raw!r}，改用按图推算", flush=True
+            )
     return max(12, n_nodes * 2) if has_cycle else max(25, n_nodes * 4)
 
 
@@ -920,13 +1042,16 @@ def _resolve_recursion_limit(wf: dict, n_nodes: int, has_cycle: bool) -> int:
 # LLM 节点：发 AG-UI TEXT_MESSAGE_* 事件，返回输出文本 + 对话历史
 # --------------------------------------------------------------------------
 
+
 async def _llm_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue, nid: str):
     system = data.get("system") or "你是一个高效、可靠的 AI 助手。"
     prompt = data.get("prompt") or ""
     user_msg = f"{prompt}\n\n[上游上下文]\n{inp}" if inp else prompt
     has_key = cfg.get("api_key")
     msg_id = f"msg_{nid}"
-    await q.put({"type": "TEXT_MESSAGE_START", "messageId": msg_id, "role": "assistant"})
+    await q.put(
+        {"type": "TEXT_MESSAGE_START", "messageId": msg_id, "role": "assistant"}
+    )
     if has_key:
         from langchain_openai import ChatOpenAI
 
@@ -942,14 +1067,18 @@ async def _llm_node(data: dict, inp: str, cfg: dict, q: asyncio.Queue, nid: str)
             tok = chunk.content or ""
             if tok:
                 collected.append(tok)
-                await q.put({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": tok})
+                await q.put(
+                    {"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": tok}
+                )
         text = "".join(collected)
     else:
         model = MockChatModel()
         text = model.invoke([HumanMessage(user_msg)]).content
         # 切片模拟流式回流（零 key 演示用）：中文逐字、英文按词，避免整句一次性蹦出
         for tok in _tokenize(text):
-            await q.put({"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": tok})
+            await q.put(
+                {"type": "TEXT_MESSAGE_CONTENT", "messageId": msg_id, "delta": tok}
+            )
     await q.put({"type": "TEXT_MESSAGE_END", "messageId": msg_id})
     return text, [HumanMessage(user_msg), AIMessage(text)]
 
@@ -973,9 +1102,11 @@ def format_decision(decision, inp: str) -> str:
     单独的 format_decision 便于单测直接覆盖三种分支，不必起图。
     """
     if isinstance(decision, dict):
-        action = str(
-            decision.get("decision") or decision.get("action") or "approve"
-        ).strip().lower()
+        action = (
+            str(decision.get("decision") or decision.get("action") or "approve")
+            .strip()
+            .lower()
+        )
         value = decision.get("value")
         note = decision.get("note") or decision.get("reason") or ""
     else:
@@ -1004,19 +1135,23 @@ async def _human_node(data: dict, inp: str, q: asyncio.Queue, nid: str) -> str:
     所以下面那个 return 【只在 resume 之后】才会跑到 —— 这是它与其它节点最大的区别，
     也是「审批节点为什么必须配 checkpointer + thread_id」的答案。
     """
-    prompt = (data.get("hitlPrompt") or data.get("prompt") or "").strip() or "请确认是否继续"
+    prompt = (
+        data.get("hitlPrompt") or data.get("prompt") or ""
+    ).strip() or "请确认是否继续"
     actions = _as_list(data.get("actions")) or list(DEFAULT_HITL_ACTIONS)
     allow_edit = data.get("allow_edit")
     if allow_edit is None:
         allow_edit = True
 
-    decision = interrupt({
-        "nodeId": nid,
-        "prompt": prompt,
-        "input": inp,
-        "actions": actions,
-        "allowEdit": bool(allow_edit),
-    })
+    decision = interrupt(
+        {
+            "nodeId": nid,
+            "prompt": prompt,
+            "input": inp,
+            "actions": actions,
+            "allowEdit": bool(allow_edit),
+        }
+    )
     return format_decision(decision, inp)
 
 
@@ -1036,7 +1171,9 @@ def _interrupt_of(result) -> dict | None:
     if value is None and isinstance(first, dict):
         value = first.get("value")
     out: dict[str, Any] = value if isinstance(value, dict) else {"input": value}
-    iid = getattr(first, "id", None) or (first.get("id") if isinstance(first, dict) else None)
+    iid = getattr(first, "id", None) or (
+        first.get("id") if isinstance(first, dict) else None
+    )
     if iid:
         out.setdefault("interruptId", iid)
     return out
@@ -1045,6 +1182,7 @@ def _interrupt_of(result) -> dict | None:
 # --------------------------------------------------------------------------
 # 图翻译 + 执行
 # --------------------------------------------------------------------------
+
 
 def _run_config(thread_id: str, limit: int) -> dict:
     """执行 config：checkpointer 要求 configurable.thread_id；上限一律显式传。
@@ -1058,8 +1196,9 @@ def _run_config(thread_id: str, limit: int) -> dict:
     }
 
 
-async def _finalize(result, q: asyncio.Queue, run_id: str, thread_id: str,
-                    nodes: dict) -> None:
+async def _finalize(
+    result, q: asyncio.Queue, run_id: str, thread_id: str, nodes: dict
+) -> None:
     """统一收尾：挂起（RUN_PAUSED）或正常结束（RUN_FINISHED）。
 
     挂起时 ainvoke **不抛异常**、正常返回，只有检查 __interrupt__ 才知道图停住了。
@@ -1078,26 +1217,30 @@ async def _finalize(result, q: asyncio.Queue, run_id: str, thread_id: str,
     paused = _interrupt_of(result)
     if paused:
         # AG-UI 标准协议没有「暂停」语义 —— 用自定义扩展事件 + RUN_FINISHED(paused) 表达
-        await q.put({
-            "type": "RUN_PAUSED",
-            "threadId": thread_id,
-            "runId": run_id,
-            "stepName": paused.get("nodeId") or "",
-            "prompt": paused.get("prompt") or "请确认是否继续",
-            "input": paused.get("input") or "",
-            "actions": paused.get("actions") or [],
-            "allowEdit": bool(paused.get("allowEdit", True)),
-            "interruptId": paused.get("interruptId") or "",
-        })
-        await q.put({"type": "RUN_FINISHED", "runId": run_id, "result": final,
-                     "paused": True})
+        await q.put(
+            {
+                "type": "RUN_PAUSED",
+                "threadId": thread_id,
+                "runId": run_id,
+                "stepName": paused.get("nodeId") or "",
+                "prompt": paused.get("prompt") or "请确认是否继续",
+                "input": paused.get("input") or "",
+                "actions": paused.get("actions") or [],
+                "allowEdit": bool(paused.get("allowEdit", True)),
+                "interruptId": paused.get("interruptId") or "",
+            }
+        )
+        await q.put(
+            {"type": "RUN_FINISHED", "runId": run_id, "result": final, "paused": True}
+        )
         return
     # AG-UI: 运行结束（result 为应用扩展字段，供桥回填 workflow:done）
     await q.put({"type": "RUN_FINISHED", "runId": run_id, "result": final})
 
 
-async def _compile_graph(wf: dict, cfg: dict, q: asyncio.Queue, tools_map: dict,
-                         input_text: str):
+async def _compile_graph(
+    wf: dict, cfg: dict, q: asyncio.Queue, tools_map: dict, input_text: str
+):
     """把 {nodes, edges} 翻译成 LangGraph StateGraph 并 compile（挂 checkpointer）。
 
     run 与 resume **各调用一次** —— 两次构图必须完全一致（同节点名、同边），
@@ -1129,7 +1272,9 @@ async def _compile_graph(wf: dict, cfg: dict, q: asyncio.Queue, tools_map: dict,
                     if isinstance(o, dict) and o.get("id") in preds[nid]
                 )
                 # AG-UI: 步骤开始
-                await q.put({"type": "STEP_STARTED", "stepName": nid, "nodeType": ntype})
+                await q.put(
+                    {"type": "STEP_STARTED", "stepName": nid, "nodeType": ntype}
+                )
                 out = inp
                 msgs: list = []
                 branch = branch_label = branch_reason = ""
@@ -1137,7 +1282,9 @@ async def _compile_graph(wf: dict, cfg: dict, q: asyncio.Queue, tools_map: dict,
                     # 外部传入的非空 input（聊天页 / HTTP 调用方）优先；
                     # 节点配置的固定 input 只是「编辑器直跑时的默认值」兜底。
                     # 反过来的优先级会让聊天页永远吃到节点里写死的旧输入。
-                    out = (input_text or "").strip() or (data.get("input") or "").strip()
+                    out = (input_text or "").strip() or (
+                        data.get("input") or ""
+                    ).strip()
                 elif ntype == "llm":
                     out, msgs = await _llm_node(data, inp, cfg, q, nid)
                 elif ntype == "condition":
@@ -1151,11 +1298,16 @@ async def _compile_graph(wf: dict, cfg: dict, q: asyncio.Queue, tools_map: dict,
                         # ReAct 模式：模型在节点内部自主决定调哪个工具、调几次
                         react_tools = _select_tools(whitelist, tools_map)
                         if react_tools:
-                            out = await _react_tool_node(data, inp, cfg, q, nid, react_tools)
+                            out = await _react_tool_node(
+                                data, inp, cfg, q, nid, react_tools
+                            )
                         else:
                             # 白名单没匹配上任何已加载工具 -> 退回单工具直调，不静默失败
-                            print(f"[ReAct] 节点 {nid} 的白名单 {whitelist} 未匹配到任何工具，"
-                                  f"已退回 direct 模式", flush=True)
+                            print(
+                                f"[ReAct] 节点 {nid} 的白名单 {whitelist} 未匹配到任何工具，"
+                                f"已退回 direct 模式",
+                                flush=True,
+                            )
                             out = await _tool_node(data, inp, q, nid, None)
                     else:
                         # direct 模式（兼容旧行为）：单工具直调
@@ -1170,26 +1322,34 @@ async def _compile_graph(wf: dict, cfg: dict, q: asyncio.Queue, tools_map: dict,
                     out = inp
                 # AG-UI: 步骤结束（output 为应用扩展字段，供桥回填内部模型）
                 step_ev: dict[str, Any] = {
-                    "type": "STEP_FINISHED", "stepName": nid, "output": out,
+                    "type": "STEP_FINISHED",
+                    "stepName": nid,
+                    "output": out,
                 }
                 entry: dict[str, Any] = {"id": nid, "text": out}
                 if branch:
                     # condition 专属：判定结果一份给桥/前端（事件），一份给 router（state）
-                    step_ev.update({
-                        "branch": branch,
-                        "branchLabel": branch_label,
-                        "branchReason": branch_reason,
-                    })
+                    step_ev.update(
+                        {
+                            "branch": branch,
+                            "branchLabel": branch_label,
+                            "branchReason": branch_reason,
+                        }
+                    )
                     entry["branch"] = branch
                 await q.put(step_ev)
                 update: dict[str, Any] = {"outputs": [entry]}
                 if msgs:
                     update["messages"] = msgs
                 return update
+
             return node
 
         for nid, n in nodes.items():
-            builder.add_node(nid, make_node(nid, n.get("type", ""), n.get("data", {}) or {}, tools_map))
+            builder.add_node(
+                nid,
+                make_node(nid, n.get("type", ""), n.get("data", {}) or {}, tools_map),
+            )
 
         # edges：普通边 + condition 节点的条件边（router 只查表，不做 IO）
         for nid, n in nodes.items():
@@ -1203,8 +1363,11 @@ async def _compile_graph(wf: dict, cfg: dict, q: asyncio.Queue, tools_map: dict,
                         判定缺失（异常路径）时兜底到第一个候选，保证路由永远有值。
                         """
                         for o in reversed(_state_outputs(state)):
-                            if (isinstance(o, dict) and o.get("id") == _nid
-                                    and o.get("branch")):
+                            if (
+                                isinstance(o, dict)
+                                and o.get("id") == _nid
+                                and o.get("branch")
+                            ):
                                 return o["branch"]
                         return _cands[0]["target"]
 
@@ -1233,14 +1396,24 @@ async def _compile_graph(wf: dict, cfg: dict, q: asyncio.Queue, tools_map: dict,
     except Exception as e:  # noqa: BLE001
         import traceback as _tb
 
-        await q.put({"type": "RUN_ERROR",
-                     "message": f"[bridge 构图错误] {e}\n{_tb.format_exc()}"})
+        await q.put(
+            {
+                "type": "RUN_ERROR",
+                "message": f"[bridge 构图错误] {e}\n{_tb.format_exc()}",
+            }
+        )
         raise
 
 
-async def _run_graph(wf: dict, input_text: str, cfg: dict, q: asyncio.Queue,
-                     thread_id: str, run_id: str,
-                     mcp_servers: list | None = None) -> None:
+async def _run_graph(
+    wf: dict,
+    input_text: str,
+    cfg: dict,
+    q: asyncio.Queue,
+    thread_id: str,
+    run_id: str,
+    mcp_servers: list | None = None,
+) -> None:
     """整图执行（第一次调用；遇到 human 节点则在 interrupt 处挂起）。"""
     try:
         nodes = {n["id"]: n for n in wf.get("nodes", [])}
@@ -1250,12 +1423,22 @@ async def _run_graph(wf: dict, input_text: str, cfg: dict, q: asyncio.Queue,
         cycle = _find_cycle(nodes, edges)
         limit = _resolve_recursion_limit(wf, len(nodes), bool(cycle))
         if cycle:
-            print(f"[bridge] 检测到环：{' → '.join(cycle)}"
-                  f"（recursion_limit={limit}，超过即报错，不再挂死）", flush=True)
+            print(
+                f"[bridge] 检测到环：{' → '.join(cycle)}"
+                f"（recursion_limit={limit}，超过即报错，不再挂死）",
+                flush=True,
+            )
 
         # AG-UI: 运行开始（recursionLimit / hasCycle 为应用扩展字段，桥会忽略未知字段）
-        await q.put({"type": "RUN_STARTED", "threadId": thread_id, "runId": run_id,
-                     "recursionLimit": limit, "hasCycle": bool(cycle)})
+        await q.put(
+            {
+                "type": "RUN_STARTED",
+                "threadId": thread_id,
+                "runId": run_id,
+                "recursionLimit": limit,
+                "hasCycle": bool(cycle),
+            }
+        )
 
         if not nodes:
             await q.put({"type": "RUN_ERROR", "message": "[空图] 没有任何节点"})
@@ -1271,25 +1454,38 @@ async def _run_graph(wf: dict, input_text: str, cfg: dict, q: asyncio.Queue,
                 {"outputs": [], "messages": []}, _run_config(thread_id, limit)
             )
         except GraphRecursionError as e:
-            await q.put({"type": "RUN_ERROR", "message": (
-                f"[超过执行步数上限 recursion_limit={limit}] 图很可能在循环且未收敛。"
-                f"可给流程设置更大的 recursion_limit、或给循环补上明确的退出判据。"
-                f"原始错误：{e}"
-            )})
+            await q.put(
+                {
+                    "type": "RUN_ERROR",
+                    "message": (
+                        f"[超过执行步数上限 recursion_limit={limit}] 图很可能在循环且未收敛。"
+                        f"可给流程设置更大的 recursion_limit、或给循环补上明确的退出判据。"
+                        f"原始错误：{e}"
+                    ),
+                }
+            )
             return
 
         await _finalize(result, q, run_id, thread_id, nodes)
     except Exception as e:  # noqa: BLE001
         import traceback as _tb
 
-        await q.put({"type": "RUN_ERROR", "message": f"[bridge 错误] {e}\n{_tb.format_exc()}"})
+        await q.put(
+            {"type": "RUN_ERROR", "message": f"[bridge 错误] {e}\n{_tb.format_exc()}"}
+        )
     finally:
         await q.put(None)
 
 
-async def _resume_graph(wf: dict, cfg: dict, q: asyncio.Queue, thread_id: str,
-                        run_id: str, decision: Any,
-                        mcp_servers: list | None = None) -> None:
+async def _resume_graph(
+    wf: dict,
+    cfg: dict,
+    q: asyncio.Queue,
+    thread_id: str,
+    run_id: str,
+    decision: Any,
+    mcp_servers: list | None = None,
+) -> None:
     """从挂起点续跑（HITL 的第二半）：Command(resume=...) + 同一 thread_id。
 
     已执行过的节点**不会重跑** —— LangGraph 从 checkpoint 恢复，只从断点之后继续。
@@ -1301,8 +1497,16 @@ async def _resume_graph(wf: dict, cfg: dict, q: asyncio.Queue, thread_id: str,
         cycle = _find_cycle(nodes, edges)
         limit = _resolve_recursion_limit(wf, len(nodes), bool(cycle))
 
-        await q.put({"type": "RUN_STARTED", "threadId": thread_id, "runId": run_id,
-                     "recursionLimit": limit, "hasCycle": bool(cycle), "resumed": True})
+        await q.put(
+            {
+                "type": "RUN_STARTED",
+                "threadId": thread_id,
+                "runId": run_id,
+                "recursionLimit": limit,
+                "hasCycle": bool(cycle),
+                "resumed": True,
+            }
+        )
 
         if not nodes:
             await q.put({"type": "RUN_ERROR", "message": "[空图] 没有任何节点"})
@@ -1318,11 +1522,16 @@ async def _resume_graph(wf: dict, cfg: dict, q: asyncio.Queue, thread_id: str,
         except Exception:  # noqa: BLE001
             snap = None
         if not snap or not getattr(snap, "next", None):
-            await q.put({"type": "RUN_ERROR", "message": (
-                f"[无法续跑] thread {thread_id} 上没有等待中的挂起点。可能原因："
-                f"threadId 不对、该流程并未挂起、或挂起态已失效"
-                f"（当前 checkpointer={checkpointer_kind()}）。"
-            )})
+            await q.put(
+                {
+                    "type": "RUN_ERROR",
+                    "message": (
+                        f"[无法续跑] thread {thread_id} 上没有等待中的挂起点。可能原因："
+                        f"threadId 不对、该流程并未挂起、或挂起态已失效"
+                        f"（当前 checkpointer={checkpointer_kind()}）。"
+                    ),
+                }
+            )
             return
 
         try:
@@ -1330,18 +1539,27 @@ async def _resume_graph(wf: dict, cfg: dict, q: asyncio.Queue, thread_id: str,
                 Command(resume=decision), _run_config(thread_id, limit)
             )
         except GraphRecursionError as e:
-            await q.put({"type": "RUN_ERROR", "message": (
-                f"[续跑时超过执行步数上限 recursion_limit={limit}] 循环未收敛。"
-                f"原始错误：{e}"
-            )})
+            await q.put(
+                {
+                    "type": "RUN_ERROR",
+                    "message": (
+                        f"[续跑时超过执行步数上限 recursion_limit={limit}] 循环未收敛。"
+                        f"原始错误：{e}"
+                    ),
+                }
+            )
             return
 
         await _finalize(result, q, run_id, thread_id, nodes)
     except Exception as e:  # noqa: BLE001
         import traceback as _tb
 
-        await q.put({"type": "RUN_ERROR",
-                     "message": f"[bridge 续跑错误] {e}\n{_tb.format_exc()}"})
+        await q.put(
+            {
+                "type": "RUN_ERROR",
+                "message": f"[bridge 续跑错误] {e}\n{_tb.format_exc()}",
+            }
+        )
     finally:
         await q.put(None)
 
@@ -1350,11 +1568,16 @@ async def _resume_graph(wf: dict, cfg: dict, q: asyncio.Queue, thread_id: str,
 # HTTP 入口
 # --------------------------------------------------------------------------
 
-def _sse_response(wf: dict, input_text: str, cfg: dict,
-                  mcp_servers: list | None = None,
-                  thread_id: str | None = None, run_id: str | None = None,
-                  resume_decision: Any = _NO_RESUME
-                  ) -> StreamingResponse:
+
+def _sse_response(
+    wf: dict,
+    input_text: str,
+    cfg: dict,
+    mcp_servers: list | None = None,
+    thread_id: str | None = None,
+    run_id: str | None = None,
+    resume_decision: Any = _NO_RESUME,
+) -> StreamingResponse:
     """把一次图执行包装成 AG-UI SSE 流（/run、/flows/{id}/run、/flows/{id}/resume 共用）。
 
     `resume_decision` 非默认值时为【续跑】：走 Command(resume=...) 从断点继续。
@@ -1371,7 +1594,9 @@ def _sse_response(wf: dict, input_text: str, cfg: dict,
             )
         else:
             task = asyncio.create_task(
-                _resume_graph(wf, cfg, q, thread_id, run_id, resume_decision, mcp_servers)
+                _resume_graph(
+                    wf, cfg, q, thread_id, run_id, resume_decision, mcp_servers
+                )
             )
         while True:
             ev = await q.get()
@@ -1384,11 +1609,15 @@ def _sse_response(wf: dict, input_text: str, cfg: dict,
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
-async def _run_collect(wf: dict, input_text: str, cfg: dict,
-                       mcp_servers: list | None = None,
-                       thread_id: str | None = None, run_id: str | None = None,
-                       resume_decision: Any = _NO_RESUME
-                       ) -> dict:
+async def _run_collect(
+    wf: dict,
+    input_text: str,
+    cfg: dict,
+    mcp_servers: list | None = None,
+    thread_id: str | None = None,
+    run_id: str | None = None,
+    resume_decision: Any = _NO_RESUME,
+) -> dict:
     """执行图并收集最终结果（非流式调用：脚本 / CI 场景）。"""
     q: asyncio.Queue = asyncio.Queue()
     thread_id = thread_id or f"wf-{uuid.uuid4().hex[:8]}"
@@ -1451,14 +1680,19 @@ async def run(req: Request):
     body = await req.json()
     # AG-UI 标准字段：每次运行一个 thread/run（可由调用方覆盖）
     return _sse_response(
-        body, body.get("input", ""), body.get("config", {}),
-        body.get("mcp_servers"), body.get("threadId"), body.get("runId"),
+        body,
+        body.get("input", ""),
+        body.get("config", {}),
+        body.get("mcp_servers"),
+        body.get("threadId"),
+        body.get("runId"),
     )
 
 
 # --------------------------------------------------------------------------
 # 按 flow_id 调用：从 SQLite 读图后直接执行（外部 HTTP 无需知道图结构）
 # --------------------------------------------------------------------------
+
 
 def _flow_or_404(flow_id: str) -> dict:
     flow = flow_store.get_flow(flow_id)
@@ -1514,13 +1748,25 @@ class RunByIdBody(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    input: str | None = Field("", description="传给 start 节点的输入文本（用户实时输入优先于 start 节点配置的默认值）")
-    config: dict | None = Field(None, description="LLM 配置；不传 = 自动读 SQLite kv['config']；传 {} = 强制零 key Mock")
+    input: str | None = Field(
+        "",
+        description="传给 start 节点的输入文本（用户实时输入优先于 start 节点配置的默认值）",
+    )
+    config: dict | None = Field(
+        None,
+        description="LLM 配置；不传 = 自动读 SQLite kv['config']；传 {} = 强制零 key Mock",
+    )
     mcp_servers: list | None = Field(None, description="覆盖默认的 MCP server 列表")
-    recursion_limit: int | None = Field(None, description="覆盖执行步数上限（不传则按图规模推算）")
-    threadId: str | None = Field(None, description="自定义 thread_id（不传自动生成；同 thread 续跑用于 HITL）")
+    recursion_limit: int | None = Field(
+        None, description="覆盖执行步数上限（不传则按图规模推算）"
+    )
+    threadId: str | None = Field(
+        None, description="自定义 thread_id（不传自动生成；同 thread 续跑用于 HITL）"
+    )
     runId: str | None = Field(None, description="自定义 run_id（不传自动生成）")
-    stream: bool | None = Field(True, description="true 返回 AG-UI SSE；false 等跑完返回 JSON")
+    stream: bool | None = Field(
+        True, description="true 返回 AG-UI SSE；false 等跑完返回 JSON"
+    )
 
 
 class ResumeByIdBody(BaseModel):
@@ -1528,13 +1774,19 @@ class ResumeByIdBody(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    threadId: str | None = Field(None, description="挂起时由 run 返回体 / RUN_PAUSED 事件带出的 thread_id")
-    thread_id: str | None = Field(None, description="threadId 的 snake_case 别名（二选一）")
+    threadId: str | None = Field(
+        None, description="挂起时由 run 返回体 / RUN_PAUSED 事件带出的 thread_id"
+    )
+    thread_id: str | None = Field(
+        None, description="threadId 的 snake_case 别名（二选一）"
+    )
     decision: str | dict | None = Field(
         None,
         description='人的决策：{"decision":"approve","value":"人工改过的内容","note":"理由"} 或裸字符串 "approve" / "reject"',
     )
-    config: dict | None = Field(None, description="同 /run（不传 = 自动读 SQLite kv['config']）")
+    config: dict | None = Field(
+        None, description="同 /run（不传 = 自动读 SQLite kv['config']）"
+    )
     mcp_servers: list | None = Field(None, description="同 /run")
     recursion_limit: int | None = Field(None, description="同 /run")
     runId: str | None = Field(None, description="同 /run")
@@ -1558,12 +1810,14 @@ async def run_flow_by_id(flow_id: str, body: RunByIdBody):
         raise HTTPException(
             status_code=409,
             detail=f"流程「{flow.get('name')}」尚未发布（当前 status={flow.get('status')}），"
-                   f"请先在 agent-flow 里发布",
+            f"请先在 agent-flow 里发布",
         )
 
     graph = flow_store.graph_of(flow)
     if not graph.get("nodes"):
-        raise HTTPException(status_code=422, detail=f"流程 {flow_id} 的图为空或无法解析")
+        raise HTTPException(
+            status_code=422, detail=f"流程 {flow_id} 的图为空或无法解析"
+        )
     # 允许调用方覆盖执行步数上限（不传则由 bridge 按图规模显式推算）
     if "recursion_limit" in body:
         graph = {**graph, "recursion_limit": body["recursion_limit"]}
@@ -1639,13 +1893,15 @@ async def resume_flow_by_id(flow_id: str, body: ResumeByIdBody):
         raise HTTPException(
             status_code=422,
             detail='缺少 decision —— 审批不能默认放行，请显式给 {"decision":"approve"} '
-                   '或 "reject"（可带 value / note）',
+            '或 "reject"（可带 value / note）',
         )
 
     flow = _flow_or_404(flow_id)
     graph = flow_store.graph_of(flow)
     if not graph.get("nodes"):
-        raise HTTPException(status_code=422, detail=f"流程 {flow_id} 的图为空或无法解析")
+        raise HTTPException(
+            status_code=422, detail=f"流程 {flow_id} 的图为空或无法解析"
+        )
     if "recursion_limit" in body:
         graph = {**graph, "recursion_limit": body["recursion_limit"]}
 
@@ -1655,11 +1911,13 @@ async def resume_flow_by_id(flow_id: str, body: ResumeByIdBody):
     decision = body["decision"]
 
     if body.get("stream", True):
-        return _sse_response(graph, "", cfg, mcp_servers, thread_id, run_id,
-                             resume_decision=decision)
+        return _sse_response(
+            graph, "", cfg, mcp_servers, thread_id, run_id, resume_decision=decision
+        )
 
-    out = await _run_collect(graph, "", cfg, mcp_servers, thread_id, run_id,
-                             resume_decision=decision)
+    out = await _run_collect(
+        graph, "", cfg, mcp_servers, thread_id, run_id, resume_decision=decision
+    )
     payload = {
         "ok": out["error"] is None,
         "resumed": True,

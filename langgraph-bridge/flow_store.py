@@ -23,6 +23,7 @@ agent-flow 桌面应用（Rust）把流程与配置写在 SQLite 里：
 Windows `%APPDATA%`、Linux `$XDG_CONFIG_HOME`）——那些位置平台各异、藏得深，
 Rust 与 Python 两边都得各自实现一遍平台分支才能对齐。固定目录只需一个常量。
 """
+
 from __future__ import annotations
 
 import json
@@ -85,9 +86,7 @@ def query(sql: str, args: tuple = ()) -> list[dict]:
 def list_flows(published_only: bool = True) -> list[dict]:
     """流程元信息列表（不含 graph，避免响应过大）。"""
     where = "WHERE status='published'" if published_only else ""
-    return query(
-        f"SELECT {FLOW_COLS} FROM flows {where} ORDER BY updated_at DESC"
-    )
+    return query(f"SELECT {FLOW_COLS} FROM flows {where} ORDER BY updated_at DESC")
 
 
 def get_flow(flow_id: str) -> dict | None:
