@@ -1,4 +1,4 @@
-# AgentFlow · Agent 工作流编排器
+# AgentFlow · Agent Orchestrator
 
 基于 **Tauri v2 + React + Rust** 的 Agent 工作流编排桌面应用。在画布上拖拽「开始 / LLM 调用 / 条件分支 / 工具调用 / **人工审批** / 结束」节点，连线组成工作流，一键运行；LLM 节点通过 **OpenAI 兼容 API** 流式调用，token 实时回流到节点与日志面板。支持**多流程管理**：每个流程可独立编辑、发布、导出、单独执行；已发布流程可通过 **HTTP 按 `flow_id` 直调**，或经 **MCP** 暴露给任意 AI agent。**支持 Human-in-the-Loop**：流程跑到「人工审批」节点会**挂起**，人在节点上给出决策（通过 / 驳回 / 改内容）后从断点续跑，跨进程重启不丢。
 
